@@ -53,6 +53,7 @@ export async function validateInputPath(inputPath) {
 }
 
 export async function outputDirectoryFor(inputPath, requested) {
+  if (requested && !isAbsolute(requested)) throw new Error("outputDirectory 必須是絕對本機路徑");
   const directory = requested ? resolve(requested) : join(dirname(inputPath), "FreeCap Output");
   await fs.mkdir(directory, { recursive: true });
   return directory;
@@ -261,9 +262,22 @@ function pcm16ToFloat32(buffer) {
   return output;
 }
 
+async function resolveProbeBinary(ffmpegBinary) {
+  try {
+    const imported = await import("ffprobe-static");
+    const candidate = imported.default?.path || imported.path;
+    if (candidate && existsSync(candidate)) return candidate;
+  } catch {
+    // Fall through to a system ffprobe or a sibling binary.
+  }
+  if (ffmpegBinary === "ffmpeg") return "ffprobe";
+  return ffmpegBinary.replace(/ffmpeg(?:\.exe)?$/, "ffprobe");
+}
+
 async function probeDuration(binary, inputPath) {
+  const probeBinary = await resolveProbeBinary(binary);
   return new Promise((resolvePromise) => {
-    const child = spawn(binary === "ffmpeg" ? "ffprobe" : binary.replace(/ffmpeg(?:\.exe)?$/, "ffprobe"), ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", inputPath], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+    const child = spawn(probeBinary, ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", inputPath], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
     let output = "";
     child.stdout.on("data", (chunk) => { output += chunk.toString(); });
     child.on("close", () => resolvePromise(Number(output.trim()) || 0));
@@ -374,7 +388,7 @@ export function cancelJob(jobId) {
 }
 
 export async function startMcpServer() {
-  const server = new McpServer({ name: "freecap", version: "0.1.1" });
+  const server = new McpServer({ name: "freecap", version: "0.1.2" });
   server.registerTool("start_transcription", { description: "在本機以 Whisper 辨識影音檔並建立可編輯字幕任務。影片不會上傳。", inputSchema: { inputPath: z.string(), language: z.enum(["auto", "zh", "en"]).optional(), model: z.enum(["tiny", "base", "small"]).optional(), outputDirectory: z.string().optional() }, annotations: { readOnlyHint: false, destructiveHint: false } }, async (args) => ({ content: [{ type: "text", text: JSON.stringify(await createTranscription(args), null, 2) }] }));
   server.registerTool("get_job", { description: "查詢 FreeCap 本機字幕任務進度、狀態與輸出檔案。", inputSchema: { jobId: z.string() }, annotations: { readOnlyHint: true } }, async ({ jobId }) => ({ content: [{ type: "text", text: JSON.stringify(getJob(jobId), null, 2) }] }));
   server.registerTool("update_cues", { description: "更新字幕文字與起訖時間；會重新排序並拒絕空白或重疊字幕。", inputSchema: { jobId: z.string(), cues: z.array(z.object({ id: z.string().optional(), startMs: z.number(), endMs: z.number(), text: z.string(), confidence: z.number().optional() })) }, annotations: { readOnlyHint: false, destructiveHint: false } }, async ({ jobId, cues }) => ({ content: [{ type: "text", text: JSON.stringify(await updateCues(jobId, cues), null, 2) }] }));
@@ -404,7 +418,7 @@ export function startBridge(port = Number(process.env.FREECAP_BRIDGE_PORT || 478
   const httpServer = createServer(async (request, response) => {
     const origin = originAllowlist.has(request.headers.origin) ? request.headers.origin : "http://localhost:3000";
     if (request.method === "OPTIONS") return bridgeResponse(response, 204, {}, origin);
-    if (request.url === "/health" && request.method === "GET") return bridgeResponse(response, 200, { ok: true, name: "freecap", version: "0.1.1" }, origin);
+    if (request.url === "/health" && request.method === "GET") return bridgeResponse(response, 200, { ok: true, name: "freecap", version: "0.1.2" }, origin);
     if (request.headers.authorization !== `Bearer ${token}`) return bridgeResponse(response, 401, { error: "配對權杖無效" }, origin);
     try {
       const parsed = new URL(request.url, `http://127.0.0.1:${port}`);

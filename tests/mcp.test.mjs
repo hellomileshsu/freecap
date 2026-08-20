@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { validateInputPath, normalizeCues, toSrt, toVtt, createTranscription, getJob } from "../mcp/server.mjs";
+import { validateInputPath, outputDirectoryFor, normalizeCues, toSrt, toVtt, createTranscription, getJob } from "../mcp/server.mjs";
 
 test("MCP path validation requires absolute supported files", async () => {
   await assert.rejects(() => validateInputPath("relative.mp4"), /絕對本機路徑/);
   await assert.rejects(() => validateInputPath("/tmp/not-a-video.txt"), /影音格式/);
+  await assert.rejects(() => outputDirectoryFor("/tmp/video.mp4", "relative-output"), /絕對本機路徑/);
 });
 
 test("MCP subtitle serializers are UTF-8 and ordered", () => {

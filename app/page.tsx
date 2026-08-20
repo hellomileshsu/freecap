@@ -286,14 +286,14 @@ export default function Home() {
   }
 
   const stageLabel = stage === "empty" ? "開始一個專案" : stage === "ready" ? "準備辨識" : stage === "processing" ? "本機處理中" : stage === "exported" ? "可以交付" : "字幕編輯中";
-  const installCommand = "npx -y github:hellomileshsu/freecap#v1.1 mcp";
-  const mcpConfig = `{"mcpServers":{"freecap":{"command":"npx","args":["-y","github:hellomileshsu/freecap#v1.1","mcp"]}}}`;
+  const installCommand = "npx -y github:hellomileshsu/freecap#v1.2 mcp";
+  const mcpConfig = `{"mcpServers":{"freecap":{"command":"npx","args":["-y","github:hellomileshsu/freecap#v1.2","mcp"]}}}`;
 
   return (
     <main className="freecap-shell">
       <header className="topbar">
         <a className="brand" href="#top" aria-label="FreeCap 首頁"><span className="brand-mark" aria-hidden="true"><span /><span /><span /></span><span>Free<span className="brand-accent">Cap</span></span></a>
-        <div className="topbar-meta"><span className="privacy-pill"><span className="status-dot" />本機優先</span><span className="version-label">v0.1.1 · GPL-3.0</span><button className="icon-button" type="button" onClick={() => setShowMcp(true)} aria-label="開啟 MCP 安裝說明">⌘</button></div>
+        <div className="topbar-meta"><span className="privacy-pill"><span className="status-dot" />本機優先</span><span className="version-label">v0.1.2 · GPL-3.0</span><button className="icon-button" type="button" onClick={() => setShowMcp(true)} aria-label="開啟 MCP 安裝說明">⌘</button></div>
       </header>
 
       <section className="hero" id="top"><div className="hero-copy"><p className="eyebrow"><span className="eyebrow-line" />FREE / LOCAL / OPEN</p><h1>字幕，留在<br /><em>你的電腦裡。</em></h1><p className="hero-subtitle">FreeCap 把影片變成可編輯字幕。無 API key、無雲端上傳，讓 Whisper 在你的裝置上安靜工作。</p><div className="hero-proof"><span>●</span> Claude · Cursor · Codex 都能呼叫</div></div><div className="hero-orbit" aria-hidden="true"><div className="orbit-ring orbit-ring-one" /><div className="orbit-ring orbit-ring-two" /><div className="orbit-core"><span>CC</span><small>LOCAL</small></div><span className="orbit-tag orbit-tag-a">WHISPER</span><span className="orbit-tag orbit-tag-b">MCP</span><span className="orbit-tag orbit-tag-c">NO CLOUD</span></div></section>
