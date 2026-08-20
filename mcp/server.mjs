@@ -84,6 +84,112 @@ export function normalizeCues(cues = [], durationMs = Number.POSITIVE_INFINITY) 
   }).filter((cue) => cue.text).sort((a, b) => a.startMs - b.startMs).map((cue, index, all) => ({ ...cue, endMs: Math.min(cue.endMs, all[index + 1]?.startMs ?? cue.endMs) }));
 }
 
+const CAPTION_LIMITS = {
+  zh: { maxCharsPerLine: 16 },
+  en: { maxCharsPerLine: 42 },
+};
+
+function dominantLanguage(text, language = "auto") {
+  if (language !== "auto") return language;
+  const han = (text.match(/[\u3400-\u9fff]/g) || []).length;
+  const latin = (text.match(/[A-Za-z]/g) || []).length;
+  return han >= latin ? "zh" : "en";
+}
+
+function cleanCaptionText(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function wrapCaptionText(text, language = "auto") {
+  const clean = cleanCaptionText(text);
+  const lang = dominantLanguage(clean, language);
+  const limit = CAPTION_LIMITS[lang].maxCharsPerLine;
+  if (lang === "zh") {
+    const chars = Array.from(clean.replaceAll(" ", ""));
+    const lines = [];
+    for (let index = 0; index < chars.length; index += limit) lines.push(chars.slice(index, index + limit).join(""));
+    return lines.join("\n");
+  }
+  const lines = [];
+  let line = "";
+  for (const word of clean.split(" ")) {
+    if (!line) line = word;
+    else if (line.length + 1 + word.length <= limit) line += ` ${word}`;
+    else {
+      lines.push(line);
+      line = word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.join("\n");
+}
+
+function splitByReadingUnits(text, language = "auto") {
+  const clean = cleanCaptionText(text);
+  const lang = dominantLanguage(clean, language);
+  const maxCueChars = CAPTION_LIMITS[lang].maxCharsPerLine * 2;
+  const sentences = clean.match(/[^。！？!?；;.!?]+[。！？!?；;.!?]?/gu) || [clean];
+  const pieces = [];
+  for (const sentence of sentences.map(cleanCaptionText).filter(Boolean)) {
+    if (lang === "zh") {
+      const chars = Array.from(sentence);
+      for (let index = 0; index < chars.length; index += maxCueChars) pieces.push(chars.slice(index, index + maxCueChars).join(""));
+      continue;
+    }
+    let piece = "";
+    for (const word of sentence.split(" ")) {
+      if (!piece) piece = word;
+      else if (piece.length + 1 + word.length <= maxCueChars) piece += ` ${word}`;
+      else {
+        pieces.push(piece);
+        piece = word;
+      }
+    }
+    if (piece) pieces.push(piece);
+  }
+  return pieces.length ? pieces : [clean];
+}
+
+function splitPiecesToCount(pieces, count, language = "auto") {
+  const lang = dominantLanguage(pieces.join(" "), language);
+  const next = [...pieces];
+  while (next.length < count) {
+    let longestIndex = -1;
+    let longestLength = 1;
+    next.forEach((piece, index) => {
+      const length = lang === "zh" ? Array.from(piece).length : piece.split(" ").length;
+      if (length > longestLength) {
+        longestLength = length;
+        longestIndex = index;
+      }
+    });
+    if (longestIndex < 0) break;
+    const units = lang === "zh" ? Array.from(next[longestIndex]) : next[longestIndex].split(" ");
+    const midpoint = Math.ceil(units.length / 2);
+    const separator = lang === "zh" ? "" : " ";
+    next.splice(longestIndex, 1, units.slice(0, midpoint).join(separator), units.slice(midpoint).join(separator));
+  }
+  return next;
+}
+
+export function segmentCaptionText(text, startMs, endMs, language = "auto") {
+  const safeStart = Math.max(0, Math.round(startMs));
+  const safeEnd = Math.max(safeStart + 120, Math.round(endMs));
+  const duration = safeEnd - safeStart;
+  const basePieces = splitByReadingUnits(text, language);
+  const pieces = splitPiecesToCount(basePieces, Math.ceil(duration / 6_000), language);
+  const minimumDuration = duration >= pieces.length * 1_000 ? 1_000 : 120;
+  const nominalDuration = Math.floor(duration / pieces.length);
+  let cursor = safeStart;
+  return pieces.map((piece, index) => {
+    const pieceDuration = index === pieces.length - 1 ? safeEnd - cursor : Math.max(minimumDuration, Math.min(6_000, nominalDuration));
+    const next = Math.min(safeEnd, cursor + pieceDuration);
+    const cue = { id: `cue-${randomUUID()}`, startMs: cursor, endMs: next, text: wrapCaptionText(piece, language) };
+    cursor = next;
+    return cue;
+  });
+}
+
 export function toSrt(cues) {
   return normalizeCues(cues).map((cue, index) => `${index + 1}\n${formatTimestamp(cue.startMs)} --> ${formatTimestamp(cue.endMs)}\n${cue.text}\n`).join("\n");
 }
@@ -182,7 +288,11 @@ async function transcribeJob(job, language, model) {
     if (job.cancelled) throw new Error("任務已取消");
     const duration = await probeDuration(binary, job.inputPath);
     const chunks = result.chunks || [];
-    const cues = normalizeCues(chunks.map((chunk, index) => ({ id: `cue-${index + 1}`, startMs: (chunk.timestamp?.[0] || 0) * 1000, endMs: (chunk.timestamp?.[1] || 0) * 1000, text: chunk.text || "" })), duration * 1000);
+    const cues = normalizeCues(chunks.flatMap((chunk) => {
+      const [start, end] = chunk.timestamp || [null, null];
+      if (start == null || end == null || !chunk.text?.trim()) return [];
+      return segmentCaptionText(chunk.text, start * 1000, Math.max(end * 1000, start * 1000 + 500), language);
+    }), duration * 1000);
     const project = { id: job.id, name: basename(job.inputPath, extname(job.inputPath)), fileName: basename(job.inputPath), fileSize: (await fs.stat(job.inputPath)).size, durationMs: duration * 1000, language, model, cues, style: DEFAULT_STYLE, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     setJob(job, { status: "ready", progress: 100, project });
   } catch (error) {
@@ -264,7 +374,7 @@ export function cancelJob(jobId) {
 }
 
 export async function startMcpServer() {
-  const server = new McpServer({ name: "freecap", version: "0.1.0" });
+  const server = new McpServer({ name: "freecap", version: "0.1.1" });
   server.registerTool("start_transcription", { description: "在本機以 Whisper 辨識影音檔並建立可編輯字幕任務。影片不會上傳。", inputSchema: { inputPath: z.string(), language: z.enum(["auto", "zh", "en"]).optional(), model: z.enum(["tiny", "base", "small"]).optional(), outputDirectory: z.string().optional() }, annotations: { readOnlyHint: false, destructiveHint: false } }, async (args) => ({ content: [{ type: "text", text: JSON.stringify(await createTranscription(args), null, 2) }] }));
   server.registerTool("get_job", { description: "查詢 FreeCap 本機字幕任務進度、狀態與輸出檔案。", inputSchema: { jobId: z.string() }, annotations: { readOnlyHint: true } }, async ({ jobId }) => ({ content: [{ type: "text", text: JSON.stringify(getJob(jobId), null, 2) }] }));
   server.registerTool("update_cues", { description: "更新字幕文字與起訖時間；會重新排序並拒絕空白或重疊字幕。", inputSchema: { jobId: z.string(), cues: z.array(z.object({ id: z.string().optional(), startMs: z.number(), endMs: z.number(), text: z.string(), confidence: z.number().optional() })) }, annotations: { readOnlyHint: false, destructiveHint: false } }, async ({ jobId, cues }) => ({ content: [{ type: "text", text: JSON.stringify(await updateCues(jobId, cues), null, 2) }] }));
@@ -294,7 +404,7 @@ export function startBridge(port = Number(process.env.FREECAP_BRIDGE_PORT || 478
   const httpServer = createServer(async (request, response) => {
     const origin = originAllowlist.has(request.headers.origin) ? request.headers.origin : "http://localhost:3000";
     if (request.method === "OPTIONS") return bridgeResponse(response, 204, {}, origin);
-    if (request.url === "/health" && request.method === "GET") return bridgeResponse(response, 200, { ok: true, name: "freecap", version: "0.1.0" }, origin);
+    if (request.url === "/health" && request.method === "GET") return bridgeResponse(response, 200, { ok: true, name: "freecap", version: "0.1.1" }, origin);
     if (request.headers.authorization !== `Bearer ${token}`) return bridgeResponse(response, 401, { error: "配對權杖無效" }, origin);
     try {
       const parsed = new URL(request.url, `http://127.0.0.1:${port}`);

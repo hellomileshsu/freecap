@@ -15,12 +15,14 @@ npm run dev
 
 瀏覽器版適合短片。超過約 500 MB 或 60 分鐘的影片，建議使用本機 MCP 助手；瀏覽器版仍會在支援的裝置上嘗試處理。
 
+辨識結果會依標點與 Whisper 停頓切句，中文每行預設 16 字、英文每行 42 字，單段目標為 1–6 秒。編輯器支援時間輸入、切分、合併、搜尋取代、復原／重做與字幕樣式調整。
+
 ## MCP 安裝
 
 需要 Node.js 22 或更新版本。Claude Code、Codex 與 Cursor 都可以啟動同一個本機 MCP 程序：
 
 ```bash
-npx -y github:hellomileshsu/freecap#v1 mcp
+npx -y github:hellomileshsu/freecap#v1.1 mcp
 ```
 
 Cursor 的 `mcp.json`：
@@ -30,7 +32,7 @@ Cursor 的 `mcp.json`：
   "mcpServers": {
     "freecap": {
       "command": "npx",
-      "args": ["-y", "github:hellomileshsu/freecap#v1", "mcp"]
+      "args": ["-y", "github:hellomileshsu/freecap#v1.1", "mcp"]
     }
   }
 }
@@ -39,7 +41,7 @@ Cursor 的 `mcp.json`：
 也可以先查看所有設定片段：
 
 ```bash
-npx -y github:hellomileshsu/freecap#v1 setup
+npx -y github:hellomileshsu/freecap#v1.1 setup
 ```
 
 可用工具：
@@ -54,7 +56,7 @@ npx -y github:hellomileshsu/freecap#v1 setup
 所有寫入操作都會建立新檔案，不覆寫原始影片。預設輸出目錄是來源影片旁的 `FreeCap Output`。可以用 `FREECAP_ALLOWED_DIRS` 限制 MCP 可以讀取的資料夾，例如：
 
 ```bash
-FREECAP_ALLOWED_DIRS="$PWD/Video" npx -y github:hellomileshsu/freecap#v1 mcp
+FREECAP_ALLOWED_DIRS="$PWD/Video" npx -y github:hellomileshsu/freecap#v1.1 mcp
 ```
 
 ## 本機橋接服務

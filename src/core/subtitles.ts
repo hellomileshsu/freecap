@@ -1,5 +1,12 @@
 import type { CaptionCue, CaptionStyle } from "./types";
 
+export type CaptionSegmentationLanguage = "auto" | "zh" | "en";
+
+export const CAPTION_LIMITS = {
+  zh: { maxCharsPerLine: 16, minDurationMs: 1_000, maxDurationMs: 6_000 },
+  en: { maxCharsPerLine: 42, minDurationMs: 1_000, maxDurationMs: 6_000 },
+} as const;
+
 export const DEFAULT_STYLE: CaptionStyle = {
   fontFamily: "Noto Sans TC",
   fontSizePercent: 4.6,
@@ -38,6 +45,123 @@ export function normalizeCues(cues: CaptionCue[], durationMs = Number.POSITIVE_I
       id: cue.id || uid(),
       endMs: Math.min(cue.endMs, all[index + 1]?.startMs ?? cue.endMs),
     }));
+}
+
+function dominantLanguage(text: string, language: CaptionSegmentationLanguage) {
+  if (language !== "auto") return language;
+  const han = (text.match(/[\u3400-\u9fff]/g) ?? []).length;
+  const latin = (text.match(/[A-Za-z]/g) ?? []).length;
+  return han >= latin ? "zh" : "en";
+}
+
+function cleanCaptionText(text: string) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** Wrap a cue into readable lines without changing its words. */
+export function wrapCaptionText(text: string, language: CaptionSegmentationLanguage = "auto") {
+  const clean = cleanCaptionText(text);
+  if (!clean) return "";
+  const lang = dominantLanguage(clean, language);
+  const limit = CAPTION_LIMITS[lang].maxCharsPerLine;
+  if (lang === "zh") {
+    const chars = Array.from(clean.replaceAll(" ", ""));
+    const lines: string[] = [];
+    for (let index = 0; index < chars.length; index += limit) lines.push(chars.slice(index, index + limit).join(""));
+    return lines.join("\n");
+  }
+  const words = clean.split(" ");
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    if (!line) {
+      line = word;
+      continue;
+    }
+    if (line.length + 1 + word.length <= limit) line += ` ${word}`;
+    else {
+      lines.push(line);
+      line = word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.join("\n");
+}
+
+function splitByReadingUnits(text: string, language: CaptionSegmentationLanguage) {
+  const lang = dominantLanguage(text, language);
+  const maxCueChars = CAPTION_LIMITS[lang].maxCharsPerLine * 2;
+  const sentences = cleanCaptionText(text).match(/[^。！？!?；;。.!?]+[。！？!?；;。.!?]?/gu) ?? [cleanCaptionText(text)];
+  const pieces: string[] = [];
+  for (const sentence of sentences.map(cleanCaptionText).filter(Boolean)) {
+    if (lang === "zh") {
+      const chars = Array.from(sentence);
+      for (let index = 0; index < chars.length; index += maxCueChars) pieces.push(chars.slice(index, index + maxCueChars).join(""));
+      continue;
+    }
+    const words = sentence.split(" ");
+    let piece = "";
+    for (const word of words) {
+      if (!piece) piece = word;
+      else if (piece.length + 1 + word.length <= maxCueChars) piece += ` ${word}`;
+      else {
+        pieces.push(piece);
+        piece = word;
+      }
+    }
+    if (piece) pieces.push(piece);
+  }
+  return pieces.length ? pieces : [cleanCaptionText(text)];
+}
+
+function splitPiecesToCount(pieces: string[], count: number, language: CaptionSegmentationLanguage) {
+  const lang = dominantLanguage(pieces.join(" "), language);
+  const next = [...pieces];
+  while (next.length < count) {
+    let longestIndex = -1;
+    let longestLength = 1;
+    next.forEach((piece, index) => {
+      const length = lang === "zh" ? Array.from(piece).length : piece.split(" ").length;
+      if (length > longestLength) {
+        longestLength = length;
+        longestIndex = index;
+      }
+    });
+    if (longestIndex < 0) break;
+    const piece = next[longestIndex];
+    const units = lang === "zh" ? Array.from(piece) : piece.split(" ");
+    const midpoint = Math.ceil(units.length / 2);
+    next.splice(longestIndex, 1, units.slice(0, midpoint).join(lang === "zh" ? "" : " "), units.slice(midpoint).join(lang === "zh" ? "" : " "));
+  }
+  return next;
+}
+
+/**
+ * Turn a Whisper segment into readable, timestamped cues. Whisper timestamps
+ * are retained, while punctuation and long pauses become separate cues.
+ */
+export function segmentCaptionText(
+  text: string,
+  startMs: number,
+  endMs: number,
+  language: CaptionSegmentationLanguage = "auto",
+) {
+  const safeStart = Math.max(0, Math.round(startMs));
+  const safeEnd = Math.max(safeStart + 120, Math.round(endMs));
+  const duration = safeEnd - safeStart;
+  const lang = dominantLanguage(text, language);
+  const basePieces = splitByReadingUnits(text, language);
+  const pieces = splitPiecesToCount(basePieces, Math.ceil(duration / CAPTION_LIMITS[lang].maxDurationMs), language);
+  const minimumDuration = duration >= pieces.length * CAPTION_LIMITS[lang].minDurationMs ? CAPTION_LIMITS[lang].minDurationMs : 120;
+  const nominalDuration = Math.floor(duration / pieces.length);
+  let cursor = safeStart;
+  return pieces.map((piece, index) => {
+    const pieceDuration = index === pieces.length - 1 ? safeEnd - cursor : Math.max(minimumDuration, Math.min(CAPTION_LIMITS[lang].maxDurationMs, nominalDuration));
+    const next = Math.min(safeEnd, cursor + pieceDuration);
+    const cue = { id: uid(), startMs: cursor, endMs: next, text: wrapCaptionText(piece, language) };
+    cursor = next;
+    return cue;
+  });
 }
 
 export function formatTimestamp(ms: number, decimal = ",") {
@@ -81,12 +205,15 @@ export function fromSrt(input: string): CaptionCue[] {
   );
 }
 
-export function fromWhisperChunks(chunks: Array<{ text?: string; timestamp?: [number | null, number | null] }>) {
+export function fromWhisperChunks(
+  chunks: Array<{ text?: string; timestamp?: [number | null, number | null] }>,
+  language: CaptionSegmentationLanguage = "auto",
+) {
   return normalizeCues(
     chunks.flatMap((chunk) => {
       const [start, end] = chunk.timestamp ?? [null, null];
       if (start == null || end == null || !chunk.text?.trim()) return [];
-      return [{ id: uid(), startMs: Math.round(start * 1000), endMs: Math.max(Math.round(end * 1000), Math.round(start * 1000) + 500), text: chunk.text.trim() }];
+      return segmentCaptionText(chunk.text, start * 1000, Math.max(end * 1000, start * 1000 + 500), language);
     }),
   );
 }

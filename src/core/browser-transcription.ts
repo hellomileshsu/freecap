@@ -56,7 +56,7 @@ export async function transcribeBrowserFile(
   URL.revokeObjectURL(audioUrl);
   onProgress(92, "整理字幕時間軸");
   const chunks = "chunks" in output ? output.chunks : [];
-  const cues = fromWhisperChunks(chunks as Array<{ text?: string; timestamp?: [number | null, number | null] }>);
+  const cues = fromWhisperChunks(chunks as Array<{ text?: string; timestamp?: [number | null, number | null] }>, language);
   onProgress(100, "辨識完成");
   return cues.length ? cues : [{ id: uid(), startMs: 0, endMs: 2500, text: output.text?.trim() || "（沒有偵測到語音）" }];
 }

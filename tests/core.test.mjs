@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DEMO_CUES, formatTimestamp, fromSrt, mergeCues, normalizeCues, parseTimestamp, splitCue, toAss, toSrt, toVtt } from "../src/core/subtitles.ts";
+import { CAPTION_LIMITS, DEMO_CUES, formatTimestamp, fromSrt, fromWhisperChunks, mergeCues, normalizeCues, parseTimestamp, splitCue, toAss, toSrt, toVtt, wrapCaptionText } from "../src/core/subtitles.ts";
 
 test("formats and parses subtitle timestamps", () => {
   assert.equal(formatTimestamp(3_721_045), "01:02:01,045");
@@ -30,6 +30,19 @@ test("split and merge preserve readable caption content", () => {
   const [left, right] = splitCue(first, 6_000);
   assert.equal(left.endMs, right.startMs);
   assert.equal(mergeCues(left, right).text, first.text);
+});
+
+test("caption segmentation wraps Chinese and English without overlap", () => {
+  const chinese = wrapCaptionText("這是一段很長的繁體中文字幕文字用來測試換行限制。", "zh");
+  assert.ok(chinese.split("\n").every((line) => Array.from(line).length <= CAPTION_LIMITS.zh.maxCharsPerLine));
+  const english = wrapCaptionText("This is a deliberately long English caption line that should wrap at a readable width.", "en");
+  assert.ok(english.split("\n").every((line) => line.length <= CAPTION_LIMITS.en.maxCharsPerLine));
+  const cues = fromWhisperChunks([{ text: "第一句。第二句！", timestamp: [0, 5] }], "zh");
+  assert.equal(cues.length, 2);
+  assert.equal(cues[0].endMs, cues[1].startMs);
+  assert.match(cues[1].text, /第二句/);
+  const longCue = fromWhisperChunks([{ text: "one two three four five six seven eight nine ten eleven twelve", timestamp: [0, 13] }], "en");
+  assert.ok(longCue.every((cue) => cue.endMs - cue.startMs <= CAPTION_LIMITS.en.maxDurationMs));
 });
 
 test("ASS output carries style and events", () => {
