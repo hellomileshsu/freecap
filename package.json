@@ -1,6 +1,6 @@
 {
   "name": "freecap",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Free, local-first video captions with a web editor and MCP server.",
   "license": "GPL-3.0-or-later",

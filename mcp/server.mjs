@@ -388,7 +388,7 @@ export function cancelJob(jobId) {
 }
 
 export async function startMcpServer() {
-  const server = new McpServer({ name: "freecap", version: "0.1.2" });
+  const server = new McpServer({ name: "freecap", version: "0.1.3" });
   server.registerTool("start_transcription", { description: "在本機以 Whisper 辨識影音檔並建立可編輯字幕任務。影片不會上傳。", inputSchema: { inputPath: z.string(), language: z.enum(["auto", "zh", "en"]).optional(), model: z.enum(["tiny", "base", "small"]).optional(), outputDirectory: z.string().optional() }, annotations: { readOnlyHint: false, destructiveHint: false } }, async (args) => ({ content: [{ type: "text", text: JSON.stringify(await createTranscription(args), null, 2) }] }));
   server.registerTool("get_job", { description: "查詢 FreeCap 本機字幕任務進度、狀態與輸出檔案。", inputSchema: { jobId: z.string() }, annotations: { readOnlyHint: true } }, async ({ jobId }) => ({ content: [{ type: "text", text: JSON.stringify(getJob(jobId), null, 2) }] }));
   server.registerTool("update_cues", { description: "更新字幕文字與起訖時間；會重新排序並拒絕空白或重疊字幕。", inputSchema: { jobId: z.string(), cues: z.array(z.object({ id: z.string().optional(), startMs: z.number(), endMs: z.number(), text: z.string(), confidence: z.number().optional() })) }, annotations: { readOnlyHint: false, destructiveHint: false } }, async ({ jobId, cues }) => ({ content: [{ type: "text", text: JSON.stringify(await updateCues(jobId, cues), null, 2) }] }));
@@ -418,7 +418,7 @@ export function startBridge(port = Number(process.env.FREECAP_BRIDGE_PORT || 478
   const httpServer = createServer(async (request, response) => {
     const origin = originAllowlist.has(request.headers.origin) ? request.headers.origin : "http://localhost:3000";
     if (request.method === "OPTIONS") return bridgeResponse(response, 204, {}, origin);
-    if (request.url === "/health" && request.method === "GET") return bridgeResponse(response, 200, { ok: true, name: "freecap", version: "0.1.2" }, origin);
+    if (request.url === "/health" && request.method === "GET") return bridgeResponse(response, 200, { ok: true, name: "freecap", version: "0.1.3" }, origin);
     if (request.headers.authorization !== `Bearer ${token}`) return bridgeResponse(response, 401, { error: "配對權杖無效" }, origin);
     try {
       const parsed = new URL(request.url, `http://127.0.0.1:${port}`);

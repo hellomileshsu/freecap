@@ -35,3 +35,16 @@ test("finished source removes starter preview infrastructure", async () => {
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   assert.match(css, /--coral:/);
 });
+
+test("browser FFmpeg uses a worker that is safe outside window scope", async () => {
+  const root = new URL("../", import.meta.url);
+  const [worker, transcription, page] = await Promise.all([
+    readFile(new URL("public/freecap-ffmpeg-worker.js", root), "utf8"),
+    readFile(new URL("src/core/browser-transcription.ts", root), "utf8"),
+    readFile(new URL("app/page.tsx", root), "utf8"),
+  ]);
+  assert.doesNotMatch(worker, /\bwindow\s*[.[]/);
+  assert.doesNotMatch(worker, /\/@vite\/client/);
+  assert.match(transcription, /classWorkerURL: "\/freecap-ffmpeg-worker\.js"/);
+  assert.match(page, /classWorkerURL: "\/freecap-ffmpeg-worker\.js"/);
+});

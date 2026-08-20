@@ -22,7 +22,7 @@ npm run dev
 需要 Node.js 22 或更新版本。Claude Code、Codex 與 Cursor 都可以啟動同一個本機 MCP 程序：
 
 ```bash
-npx -y github:hellomileshsu/freecap#v1.2 mcp
+npx -y github:hellomileshsu/freecap#v1.3 mcp
 ```
 
 Cursor 的 `mcp.json`：
@@ -32,7 +32,7 @@ Cursor 的 `mcp.json`：
   "mcpServers": {
     "freecap": {
       "command": "npx",
-      "args": ["-y", "github:hellomileshsu/freecap#v1.2", "mcp"]
+      "args": ["-y", "github:hellomileshsu/freecap#v1.3", "mcp"]
     }
   }
 }
@@ -41,7 +41,7 @@ Cursor 的 `mcp.json`：
 也可以先查看所有設定片段：
 
 ```bash
-npx -y github:hellomileshsu/freecap#v1.2 setup
+npx -y github:hellomileshsu/freecap#v1.3 setup
 ```
 
 可用工具：
@@ -56,7 +56,7 @@ npx -y github:hellomileshsu/freecap#v1.2 setup
 所有寫入操作都會建立新檔案，不覆寫原始影片。預設輸出目錄是來源影片旁的 `FreeCap Output`。可以用 `FREECAP_ALLOWED_DIRS` 限制 MCP 可以讀取的資料夾，例如：
 
 ```bash
-FREECAP_ALLOWED_DIRS="$PWD/Video" npx -y github:hellomileshsu/freecap#v1.2 mcp
+FREECAP_ALLOWED_DIRS="$PWD/Video" npx -y github:hellomileshsu/freecap#v1.3 mcp
 ```
 
 ## 本機橋接服務

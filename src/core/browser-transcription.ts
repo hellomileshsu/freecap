@@ -27,6 +27,7 @@ export async function transcribeBrowserFile(
   const ffmpeg = new FFmpeg();
   const coreBase = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm";
   await ffmpeg.load({
+    classWorkerURL: "/freecap-ffmpeg-worker.js",
     coreURL: await toBlobURL(`${coreBase}/ffmpeg-core.js`, "text/javascript"),
     wasmURL: await toBlobURL(`${coreBase}/ffmpeg-core.wasm`, "application/wasm"),
   });
